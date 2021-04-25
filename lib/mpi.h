@@ -4,7 +4,8 @@
 
 #include <semaphore.h>
 
-typedef struct {
+typedef struct
+{
     sem_t *s_empty;
     sem_t *s_full;
     void *shm_p;

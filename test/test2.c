@@ -5,7 +5,8 @@
 #include <stdio.h>
 #include <mpi.h>
 
-int main(int argc, char *argv[], char *environ[])
+int
+main(int argc, char *argv[], char *environ[])
 {
     int npes, myrank, number, i;
 

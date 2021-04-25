@@ -11,13 +11,21 @@
 #include <fcntl.h>    /* For O_* constants */
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define BOUNDED_BUFFER_SIZE 4096
 #define MAX_CHANNEL 100
 
-#define SEM_FULL_NAME_FORMAT "ch_%d_full_%d"
-#define SEM_EMPTY_NAME_FORMAT "ch_%d_empty_%d"
-#define SHM_NAME_FORMAT "shm_ch_%d"
+#define SEM_FULL_NAME_FORMAT "ch%d_full"
+#define SEM_EMPTY_NAME_FORMAT "ch%d_empty"
+#define SHM_NAME_FORMAT "shm_ch%d"
+
+#define DEBUG 0
+#define LOG(tag, msg, from, to) {           \
+    struct timespec spec;                   \
+    clock_gettime(CLOCK_REALTIME, &spec);   \
+    printf("[%s] (%lld.%.9ld) %d --> %d %s\n", (tag), (long long)spec.tv_sec, spec.tv_nsec, (from), (to), (msg)); \
+}
 
 int comm_size;
 int comm_rank;
@@ -53,12 +61,12 @@ MPI_Init(int *argc, char ***argv)
         }
 
         char f_name[100];
-        sprintf(f_name, SEM_FULL_NAME_FORMAT, i, comm_rank);
+        sprintf(f_name, SEM_FULL_NAME_FORMAT, i);
         sem_t *full = sem_open(f_name, O_CREAT, 0600, 0);
         sem_init(full, 1, 0);
 
         char e_name[100];
-        sprintf(e_name, SEM_EMPTY_NAME_FORMAT, i, comm_rank);
+        sprintf(e_name, SEM_EMPTY_NAME_FORMAT, i);
         sem_t *empty = sem_open(e_name, O_CREAT, 0600, 0);
         sem_init(empty, 1, BOUNDED_BUFFER_SIZE);
 
@@ -78,6 +86,7 @@ MPI_Init(int *argc, char ***argv)
 int
 MPI_Finalize()
 {
+    /*
     for (int i = 0; i < comm_size; i++)
     {
         channel_t ch = channels[i];
@@ -90,6 +99,7 @@ MPI_Finalize()
         sem_destroy(ch.s_full);
         sem_destroy(ch.s_empty);
     }
+    */
     return 0;
 }
 
@@ -114,6 +124,9 @@ MPI_Recv(void *buf, int count, int size, int source, int tag)
     sem_wait(ch.s_full);
     memcpy(buf, ch.shm_p + ch.use, count * size);
     ch.use = (ch.use + count * size) % BOUNDED_BUFFER_SIZE;
+#if DEBUG
+    LOG("ACK", "RECEIVED", source, comm_rank);
+#endif
     sem_post(ch.s_empty);
     return 0;
 }
@@ -125,6 +138,9 @@ MPI_Send(const void *buf, int count, int size, int dest, int tag)
     sem_wait(channels[dest].s_empty);
     memcpy(ch.shm_p + ch.fill, buf, count * size);
     ch.fill = (ch.fill + count * size) % BOUNDED_BUFFER_SIZE;
+#if DEBUG
+    LOG("ACK", "SENT", comm_rank, dest);
+#endif
     sem_post(ch.s_full);
     return 0;
 }
