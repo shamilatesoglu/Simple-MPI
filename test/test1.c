@@ -1,3 +1,6 @@
+#include <mpi.h>
+#include <stdio.h>
+
 int main(int argc, char *argv[], char *environ[])
 {
     int npes, myrank, number, i;
@@ -41,6 +44,6 @@ int main(int argc, char *argv[], char *environ[])
             MPI_Recv(&number, 1, sizeof(int), (myrank - 1 + npes) % npes, 0);
         }
     }
-    printf("FINISHED  %d\n", myrank);
+    printf("FINISHED %d\n", myrank);
     MPI_Finalize();
 }
