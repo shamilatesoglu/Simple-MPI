@@ -4,14 +4,24 @@
 
 #include <semaphore.h>
 
+#define SEM_MUTEX_NAME_FORMAT "inbox%d_mutex"
+#define SEM_FULL_NAME_FORMAT "inbox%d_full"
+#define SEM_EMPTY_NAME_FORMAT "inbox%d_empty"
+#define SEM_INITIALIZED_NAME_FORMAT "p%d_initialized"
+#define SEM_GO_NAME_FORMAT "p%d_go"
+#define SEM_TERMINATE_NAME_FORMAT "p%d_terminate"
+#define SHM_INBOX_NAME_FORMAT "shm_inbox%d"
+#define SHM_INBOX_STATUS_NAME_FORMAT "shm_inbox%d_status"
+
 typedef struct
 {
+    sem_t *mutex;
     sem_t *sem_empty;
     sem_t *sem_full;
     void *shm_p;
     int shm_fd;
-    int use;
-    int fill;
+    int *use;
+    int *fill;
 } inbox_t;
 
 int
@@ -39,6 +49,5 @@ MPI_Recv(void *out, int count, int size, int source, int tag);
 
 int
 MPI_Send(const void *data, int count, int size, int dest, int tag);
-
 
 #endif // PROJECT_I__MPI_H

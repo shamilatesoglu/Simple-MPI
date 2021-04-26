@@ -12,7 +12,7 @@ add_executable(test2 test/test2.c)
 add_executable(test3 test/test3.c)
 
 target_link_libraries(mpi -lpthread -lrt)
-target_link_libraries(my_mpirun)
+target_link_libraries(my_mpirun mpi)
 target_link_libraries(hello mpi)
 target_link_libraries(test1 mpi)
 target_link_libraries(test2 mpi)
