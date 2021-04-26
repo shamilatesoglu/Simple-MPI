@@ -13,8 +13,6 @@ main(int argc, char *argv[], char *environ[])
     MPI_Init(&argc, &argv);
     MPI_Comm_size(&npes);
     MPI_Comm_rank(&myrank);
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "EndlessLoop"
     if (myrank % 2 == 0)
     {
         int other = (myrank + 1) % npes;
@@ -39,7 +37,5 @@ main(int argc, char *argv[], char *environ[])
         MPI_Recv(ack, 1, sizeof(char) * 4, other, 0);
         printf("%d has received data (%s) from %d\n", myrank, ack, other);
     }
-#pragma clang diagnostic pop
-    sleep(5);
     MPI_Finalize();
 }

@@ -40,8 +40,5 @@ MPI_Recv(void *out, int count, int size, int source, int tag);
 int
 MPI_Send(const void *data, int count, int size, int dest, int tag);
 
-void
-MPI_Print_memory();
-
 
 #endif // PROJECT_I__MPI_H

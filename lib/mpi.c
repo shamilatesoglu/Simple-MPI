@@ -13,6 +13,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdarg.h>
+#include <string.h>
 
 #define BOUNDED_BUFFER_SIZE 48
 #define MAX_CHANNEL 100
@@ -21,7 +22,7 @@
 #define SEM_EMPTY_NAME_FORMAT "inbox%d_empty"
 #define SHM_NAME_FORMAT "shm_inbox%d"
 
-#define DEBUG 0
+#define DEBUG 1
 
 void
 debug_print(char *tag, char *fmt, ...)
@@ -31,32 +32,53 @@ debug_print(char *tag, char *fmt, ...)
     struct timespec spec;
     clock_gettime(CLOCK_REALTIME, &spec);
 
-    printf("[%s] (%lld.%.9ld) ", (tag), (long long) spec.tv_sec, spec.tv_nsec);
+    printf("[%s]\t(%lld.%.9ld) ", (tag), (long long) spec.tv_sec, spec.tv_nsec);
     vprintf(fmt, args);
 
     va_end(args);
 }
 
-int comm_size;
-int comm_rank;
+static int comm_size;
+static int comm_rank;
 
-sem_t *mutex;
+static sem_t *mutex;
 
-inbox_t inboxes[MAX_CHANNEL];
+static inbox_t *inboxes;
 
 /* Private methods */
-
+void
+print_shm_segment(int id);
+void
+sprint_memory(char *out);
 
 /* Implementations */
 
 int
 MPI_Init(int *argc, char ***argv)
 {
+    mutex = sem_open("mutex_lock", O_CREAT, 0600, 0);
+    sem_init(mutex, 1, 1);
+
     char *arg_rank = (*argv)[1];
     char *arg_n = (*argv)[2];
 
     comm_rank = (int) strtol(arg_rank, NULL, 10);
     comm_size = (int) strtol(arg_n, NULL, 10);
+
+    int shm_inbox_fd = shm_open("shm_inbox_segment", O_CREAT | O_RDWR, 0666);
+    if (shm_inbox_fd < 0)
+    {
+        printf("Unable to open a shared memory segment for inboxes.\n");
+        exit(0);
+    }
+    ftruncate(shm_inbox_fd, comm_size * ((int) sizeof(inbox_t *)));
+
+    inboxes = mmap(NULL, BOUNDED_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_inbox_fd, 0);
+    if (MAP_FAILED == inboxes)
+    {
+        printf("Unable to map shared memory address space for inbox segment.\n");
+        exit(0);
+    }
 
     for (int i = 0; i < comm_size; i++)
     {
@@ -87,18 +109,19 @@ MPI_Init(int *argc, char ***argv)
         sem_t *empty = sem_open(e_name, O_CREAT, 0600, 0);
         sem_init(empty, 1, BOUNDED_BUFFER_SIZE);
 
-        inbox_t ch;
-        ch.sem_full = full;
-        ch.sem_empty = empty;
-        ch.shm_fd = shm_fd;
-        ch.shm_p = shm_pointer;
-        ch.use = 0;
-        ch.fill = 0;
-        inboxes[i] = ch;
+        inbox_t inbox;
+        inbox.sem_full = full;
+        inbox.sem_empty = empty;
+        inbox.shm_fd = shm_fd;
+        inbox.shm_p = shm_pointer;
+        inboxes[i] = inbox;
+
     }
 
-    mutex = sem_open("mutex_lock", O_CREAT, 0600, 0);
-    sem_init(mutex, 1, 1);
+    sem_wait(mutex);
+    inboxes[comm_rank].fill = 0;
+    inboxes[comm_rank].use = 0;
+    sem_post(mutex);
 
     return 0;
 }
@@ -111,15 +134,15 @@ MPI_Finalize()
 #endif
     for (int i = 0; i < comm_size; i++)
     {
-        inbox_t ch = inboxes[i];
+        inbox_t inbox = inboxes[i];
 
         char name[100];
         sprintf(name, SHM_NAME_FORMAT, i);
         shm_unlink(name);
-        sem_close(ch.sem_full);
-        sem_close(ch.sem_empty);
-        sem_destroy(ch.sem_full);
-        sem_destroy(ch.sem_empty);
+        sem_close(inbox.sem_full);
+        sem_close(inbox.sem_empty);
+        sem_destroy(inbox.sem_full);
+        sem_destroy(inbox.sem_empty);
     }
 
     return 0;
@@ -181,6 +204,10 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
     debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
+    char m[10000];
+    m[0] = '\0';
+    sprint_memory(m);
+    printf("%s", m);
 #endif
     sem_wait(inbox.sem_empty);
     sem_wait(mutex);
@@ -199,21 +226,29 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
     debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
+    m[0] = '\0';
+    sprint_memory(m);
+    printf("%s", m);
 #endif
     return 0;
 }
 
 void
-MPI_Print_memory()
+sprint_memory(char *out)
 {
+    strcat(out, "MEMORY: \n");
     for (int i = 0; i < comm_size; i++)
     {
-        printf("inbox%d: ", i);
+        char buffer[10000];
+        sprintf(buffer, "inbox%d: (fill: %d use: %d) # ", i, inboxes[i].fill, inboxes[i].use);
+        strcat(out, buffer);
+        buffer[0] = '\0';
         for (int j = 0; j < BOUNDED_BUFFER_SIZE; j += 4)
         {
-            printf("|%d", *(int *) (inboxes[i].shm_p + j));
+            sprintf(buffer, "|%7d", *(int *) (inboxes[i].shm_p + j));
+            strcat(out, buffer);
+            buffer[0] = '\0';
         }
-        printf("| # ");
+        strcat(out, "|\n");
     }
-    printf("\n");
 }
