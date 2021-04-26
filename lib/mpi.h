@@ -6,13 +6,13 @@
 
 typedef struct
 {
-    sem_t *s_empty;
-    sem_t *s_full;
+    sem_t *sem_empty;
+    sem_t *sem_full;
     void *shm_p;
     int shm_fd;
     int use;
     int fill;
-} channel_t;
+} inbox_t;
 
 int
 MPI_Init(int *argc, char ***argv);
@@ -35,9 +35,13 @@ int
 MPI_Comm_rank(int *rank);
 
 int
-MPI_Recv(void *buf, int count, int size, int source, int tag);
+MPI_Recv(void *out, int count, int size, int source, int tag);
 
 int
-MPI_Send(const void *buf, int count, int size, int dest, int tag);
+MPI_Send(const void *data, int count, int size, int dest, int tag);
+
+void
+MPI_Print_memory();
+
 
 #endif // PROJECT_I__MPI_H
