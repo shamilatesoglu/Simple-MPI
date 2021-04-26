@@ -6,12 +6,15 @@
 
 typedef struct
 {
+    sem_t *init;
+    sem_t *go;
+    sem_t *mutex;
     sem_t *sem_empty;
     sem_t *sem_full;
     void *shm_p;
     int shm_fd;
-    int use;
-    int fill;
+    int *use;
+    int *fill;
 } inbox_t;
 
 int
@@ -39,6 +42,5 @@ MPI_Recv(void *out, int count, int size, int source, int tag);
 
 int
 MPI_Send(const void *data, int count, int size, int dest, int tag);
-
 
 #endif // PROJECT_I__MPI_H
