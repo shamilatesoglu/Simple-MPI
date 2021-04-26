@@ -9,9 +9,8 @@ typedef struct
     sem_t *sem_empty;
     sem_t *sem_full;
     void *shm_p;
-    int shm_fd;
-    int use;
-    int fill;
+    int *fill;
+    int *use;
 } inbox_t;
 
 int

@@ -43,7 +43,7 @@ static int comm_rank;
 
 static sem_t *mutex;
 
-static inbox_t *inboxes;
+static inbox_t inboxes[MAX_CHANNEL];
 
 /* Private methods */
 void
@@ -65,21 +65,6 @@ MPI_Init(int *argc, char ***argv)
     comm_rank = (int) strtol(arg_rank, NULL, 10);
     comm_size = (int) strtol(arg_n, NULL, 10);
 
-    int shm_inbox_fd = shm_open("shm_inbox_segment", O_CREAT | O_RDWR, 0666);
-    if (shm_inbox_fd < 0)
-    {
-        printf("Unable to open a shared memory segment for inboxes.\n");
-        exit(0);
-    }
-    ftruncate(shm_inbox_fd, comm_size * ((int) sizeof(inbox_t *)));
-
-    inboxes = mmap(NULL, BOUNDED_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_inbox_fd, 0);
-    if (MAP_FAILED == inboxes)
-    {
-        printf("Unable to map shared memory address space for inbox segment.\n");
-        exit(0);
-    }
-
     for (int i = 0; i < comm_size; i++)
     {
         char name[100];
@@ -99,6 +84,23 @@ MPI_Init(int *argc, char ***argv)
             exit(0);
         }
 
+        char inbox_status_name[100];
+        sprintf(inbox_status_name, "shm_inbox%d_status", i);
+        int shm_inbox_status_fd = shm_open(inbox_status_name, O_CREAT | O_RDWR, 0666);
+        if (shm_inbox_status_fd < 0)
+        {
+            printf("Unable to open a shared memory segment \"%s\".\n", inbox_status_name);
+            exit(0);
+        }
+        ftruncate(shm_inbox_status_fd, BOUNDED_BUFFER_SIZE);
+
+        void *shm_inbox_status_pointer = mmap(NULL, BOUNDED_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        if (MAP_FAILED == shm_inbox_status_pointer)
+        {
+            printf("Unable to map shared memory address space for \"%s\".\n", inbox_status_name);
+            exit(0);
+        }
+
         char f_name[100];
         sprintf(f_name, SEM_FULL_NAME_FORMAT, i);
         sem_t *full = sem_open(f_name, O_CREAT, 0600, 0);
@@ -112,16 +114,15 @@ MPI_Init(int *argc, char ***argv)
         inbox_t inbox;
         inbox.sem_full = full;
         inbox.sem_empty = empty;
-        inbox.shm_fd = shm_fd;
         inbox.shm_p = shm_pointer;
+        inbox.fill = (int *)(shm_inbox_status_pointer);
+        inbox.use = (int *)(shm_inbox_status_pointer + sizeof(int));
+        sem_wait(mutex);
+        *(inbox.fill) = 0;
+        *(inbox.use) = 0;
+        sem_post(mutex);
         inboxes[i] = inbox;
-
     }
-
-    sem_wait(mutex);
-    inboxes[comm_rank].fill = 0;
-    inboxes[comm_rank].use = 0;
-    sem_post(mutex);
 
     return 0;
 }
@@ -175,8 +176,8 @@ MPI_Recv(void *out, int count, int size, int source, int tag)
 #endif
     sem_wait(inbox.sem_full);
     sem_wait(mutex);
-    memcpy(out, inbox.shm_p + inbox.use, count * size);
-    inbox.use = (inbox.use + count * size) % BOUNDED_BUFFER_SIZE;
+    memcpy(out, inbox.shm_p + *(inbox.use), count * size);
+    *(inbox.use) = (*(inbox.use) + count * size) % BOUNDED_BUFFER_SIZE;
 #if DEBUG
     debug_print("INFO", "%d has read the message sent by %d\n", comm_rank, source);
     sem_getvalue(inbox.sem_full, &fval);
@@ -211,8 +212,8 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
 #endif
     sem_wait(inbox.sem_empty);
     sem_wait(mutex);
-    memcpy(inbox.shm_p + inbox.fill, data, count * size);
-    inbox.fill = (inbox.fill + count * size) % BOUNDED_BUFFER_SIZE;
+    memcpy(inbox.shm_p + *(inbox.fill), data, count * size);
+    *(inbox.fill) = (*(inbox.fill) + count * size) % BOUNDED_BUFFER_SIZE;
 #if DEBUG
     debug_print("INFO", "%d has written a message to inbox%d\n", comm_rank, dest);
     sem_getvalue(inbox.sem_full, &fval);
@@ -240,12 +241,12 @@ sprint_memory(char *out)
     for (int i = 0; i < comm_size; i++)
     {
         char buffer[10000];
-        sprintf(buffer, "inbox%d: (fill: %d use: %d) # ", i, inboxes[i].fill, inboxes[i].use);
+        sprintf(buffer, "inbox%d: (fill: %d use: %d) # ", i, *(inboxes[i].fill), *(inboxes[i].use));
         strcat(out, buffer);
         buffer[0] = '\0';
         for (int j = 0; j < BOUNDED_BUFFER_SIZE; j += 4)
         {
-            sprintf(buffer, "|%7d", *(int *) (inboxes[i].shm_p + j));
+            sprintf(buffer, "|%d", *(int *) (inboxes[i].shm_p + j));
             strcat(out, buffer);
             buffer[0] = '\0';
         }
