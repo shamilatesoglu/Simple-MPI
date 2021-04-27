@@ -16,13 +16,13 @@ main(int argc, char *argv[], char *environ[])
         printf("There must be 2 arguments in the following order: The number of instances to create, and an executable path.");
     }
 
-    int number_of_processes = (int) strtol(argv[1], NULL, 10);
+    int process_count = (int) strtol(argv[1], NULL, 10);
     char *executable_path = argv[2];
 
-    pid_t processes[number_of_processes];
-    create_processes(processes, executable_path, number_of_processes, environ);
+    pid_t processes[process_count];
+    create_processes(processes, executable_path, process_count, environ);
 
-    for (int i = 0; i < number_of_processes; i++)
+    for (int i = 0; i < process_count; i++)
     {
         waitpid(processes[i], NULL, 0);
     }
