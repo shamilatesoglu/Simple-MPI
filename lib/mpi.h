@@ -15,7 +15,7 @@
 
 typedef struct
 {
-    sem_t *mutex;
+    sem_t *lock;
     sem_t *sem_empty;
     sem_t *sem_full;
     void *shm_p;
@@ -23,6 +23,13 @@ typedef struct
     int *use;
     int *fill;
 } inbox_t;
+
+typedef struct
+{
+    sem_t *init;
+    sem_t *go;
+    sem_t *terminate;
+} process_status_t;
 
 int
 MPI_Init(int *argc, char ***argv);
