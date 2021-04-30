@@ -16,11 +16,11 @@
 #include <string.h>
 #include <errno.h>
 
-#define BOUNDED_BUFFER_SIZE 48
+#define BOUNDED_BUFFER_SIZE 100
 #define MAX_PROCESS_COUNT 100
 
 #define DEBUG 0
-#define PRINT_MEMORY 1
+#define PRINT_MEMORY 0
 
 static int comm_size;
 static int comm_rank;
@@ -59,7 +59,7 @@ MPI_Init(int *argc, char ***argv)
         sprintf(inbox_name, SHM_INBOX_NAME_FORMAT, i);
         int shm_inbox_fd;
         void *shm_inbox_pointer;
-        MPI_create_shared_memory(inbox_name, BOUNDED_BUFFER_SIZE, &shm_inbox_pointer, &shm_inbox_fd);
+        MPI_create_shared_memory(inbox_name, (BOUNDED_BUFFER_SIZE) * sizeof(message_t), &shm_inbox_pointer, &shm_inbox_fd);
 
         char status_name[100];
         sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, i);
@@ -144,9 +144,7 @@ MPI_Init(int *argc, char ***argv)
 int
 MPI_Finalize()
 {
-#if DEBUG
     MPI_debug_print("INFO", "Finalize %d\n", comm_rank);
-#endif
     inbox_t inbox = inboxes[comm_rank];
 
     char name[100];
@@ -169,12 +167,12 @@ MPI_Finalize()
             MPI_debug_print("INFO", "Root process has received terminate signal from %d\n", i);
         }
 
-        //for (int i = 0; i < comm_size; i++)
-        //{
-        //    sem_close(processes[i].init);
-        //    sem_close(processes[i].go);
-        //    sem_close(processes[i].terminate);
-        //}
+        for (int i = 0; i < comm_size; i++)
+        {
+            sem_close(processes[i].init);
+            sem_close(processes[i].go);
+            sem_close(processes[i].terminate);
+        }
     }
     else
     {
@@ -204,13 +202,11 @@ MPI_Recv(void *out, int count, int size, int source, int tag)
 {
     inbox_t inbox = inboxes[comm_rank];
 
-#if DEBUG
-    debug_print("INFO", "%d is waiting for its inbox to be filled\n", comm_rank);
+    MPI_debug_print("INFO", "%d is waiting for its inbox to be filled\n", comm_rank);
     int fval, eval;
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
 
     sem_wait(inbox.sem_full);
     sem_wait(inbox.lock);
@@ -223,22 +219,18 @@ MPI_Recv(void *out, int count, int size, int source, int tag)
     memcpy(out, inbox.shm_p + *(inbox.use), count * size);
     *(inbox.use) = (*(inbox.use) + count * size) % BOUNDED_BUFFER_SIZE;
 
-#if DEBUG
-    debug_print("INFO", "%d has read the message sent by %d\n", comm_rank, source);
+    MPI_debug_print("INFO", "%d has read the message sent by %d\n", comm_rank, source);
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
 
     sem_post(inbox.lock);
     sem_post(inbox.sem_empty);
 
-#if DEBUG
-    debug_print("INFO", "%d has notified %d that the inbox%d has been emptied\n", comm_rank, source, comm_rank);
+    MPI_debug_print("INFO", "%d has notified %d that the inbox%d has been emptied\n", comm_rank, source, comm_rank);
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
     return 0;
 }
 
@@ -247,35 +239,30 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
 {
     inbox_t inbox = inboxes[dest];
 
-#if DEBUG
-    debug_print("INFO", "%d is waiting for inbox%d to be emptied\n", comm_rank, dest);
+    MPI_debug_print("INFO", "%d is waiting for inbox%d to be emptied\n", comm_rank, dest);
     int fval, eval;
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
 
     sem_wait(inbox.sem_empty);
     sem_wait(inbox.lock);
     memcpy(inbox.shm_p + *(inbox.fill), data, count * size);
     *(inbox.fill) = (*(inbox.fill) + count * size) % BOUNDED_BUFFER_SIZE;
 
-#if DEBUG
-    debug_print("INFO", "%d has written a message to inbox%d\n", comm_rank, dest);
+    MPI_debug_print("INFO", "%d has written a message to inbox%d\n", comm_rank, dest);
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
 
     sem_post(inbox.lock);
     sem_post(inbox.sem_full);
 
-#if DEBUG
     MPI_debug_print("INFO", "%d has notified %d that the inbox%d has been filled\n", comm_rank, dest, dest);
     sem_getvalue(inbox.sem_full, &fval);
     sem_getvalue(inbox.sem_empty, &eval);
-//    debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
-#endif
+    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
+
     return 0;
 }
 
@@ -348,6 +335,7 @@ MPI_debug_sprint_memory(char *out)
 void
 MPI_debug_print(char *tag, char *fmt, ...)
 {
+#if DEBUG
     va_list args;
     va_start(args, fmt);
     struct timespec spec;
@@ -357,4 +345,5 @@ MPI_debug_print(char *tag, char *fmt, ...)
     vprintf(fmt, args);
 
     va_end(args);
+#endif
 }

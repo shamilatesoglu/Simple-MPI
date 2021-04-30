@@ -12,23 +12,23 @@ main(int argc, char *argv[], char *environ[])
     if (myrank % 2 == 0)
     {
         int other = (myrank + 1) % npes;
-        // printf("%d is waiting data from %d\n", myrank, other);
+        printf("%d is waiting data from %d\n", myrank, other);
         MPI_Recv(&number, 1, sizeof(int), other, 0);
-        // printf("From process %d to process %d data = %d, RECEIVED!\n", other, myrank, number);
-        // printf("%d is sending data (%d) to %d\n", myrank, number, other);
+        printf("%d has received data (%d) from %d\n", myrank, number, other);
+        printf("%d is sending data (%d) to %d\n", myrank, number, other);
         MPI_Send(&number, 1, sizeof(int), other, 0);
-        // printf("From process %d to process %d data = %d, SENT!\n", myrank, other, number);
+        printf("%d has sent data (%d) to %d\n", myrank, number, other);
     }
     else
     {
         number = myrank;
         int other = (myrank - 1 + npes) % npes;
-        // printf("%d is sending data (%d) to %d\n", myrank, number, other);
+        printf("%d is sending data (%d) to %d\n", myrank, number, other);
         MPI_Send(&number, 1, sizeof(int), other, 0);
-        // printf("From process %d to process %d data = %d, SENT!\n", myrank, other, number);
-        // printf("%d is waiting data from %d\n", myrank, other);
+        printf("%d has sent data (%d) to %d\n", myrank, number, other);
+        printf("%d is waiting data from %d\n", myrank, other);
         MPI_Recv(&number, 1, sizeof(int), other, 0);
-        // printf("From process %d to process %d data = %d, RECEIVED!\n", other, myrank, number);
+        printf("%d has received data (%d) from %d\n", myrank, number, other);
     }
     MPI_Finalize();
 }
