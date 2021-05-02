@@ -16,8 +16,8 @@
 typedef struct
 {
     sem_t *lock;
-    sem_t *sem_sent;
-    sem_t *sem_received;
+    sem_t *sem_full;
+    sem_t *sem_empty;
     void *shm_p;
 } inbox_t;
 
