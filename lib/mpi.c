@@ -16,11 +16,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define MAX_MESSAGE_COUNT_PER_SENDER 24
-#define MAX_PROCESS_COUNT 100
-
-#define DEBUG 1
-#define PRINT_MEMORY 0
+#define DEBUG 0
 
 static int comm_size;
 static int comm_rank;
@@ -32,9 +28,6 @@ static process_status_t processes[MAX_PROCESS_COUNT];
 /* Private methods */
 void
 MPI_debug_print(char *tag, char *fmt, ...);
-
-void
-MPI_debug_sprint_memory(char *out);
 
 void
 MPI_create_shared_memory(char *name, size_t size, byte **out_shm_pointer, int *out_fd);
@@ -91,7 +84,7 @@ MPI_Init(int *argc, char ***argv)
 
         sprintf(sem_name, SEM_EMPTY_NAME_FORMAT, i);
         sem_t *empty;
-        MPI_create_or_open_semaphore(sem_name, &empty, MAX_MESSAGE_COUNT_PER_SENDER * comm_size);
+        MPI_create_or_open_semaphore(sem_name, &empty, MAX_MESSAGE_COUNT_PER_SENDER);
 
         inbox_t inbox;
         inbox.lock = mutex;
@@ -210,21 +203,16 @@ MPI_Recv(void *out, int count, int size, int source, int tag)
 
     ///// CRITICAL SECTION /////
 
-#if PRINT_MEMORY
-    char m[10000];
-    m[0] = '\0';
-    MPI_debug_sprint_memory(m);
-    printf("%s", m);
-#endif
-
-    int offset = ((int) sizeof(int)) * comm_rank + (MAX_MESSAGE_COUNT_PER_SENDER * comm_rank);
+    size_t offset = (2 * sizeof(int) * source) + (MAX_MESSAGE_COUNT_PER_SENDER * sizeof(envelope_t) * source);
     int *use = ((int *) (inbox.shm_p + offset + sizeof(int)));
 
-    void *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
+    byte *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
     envelope_t envelope;
 
-    memcpy(&envelope, memory_start + *use, sizeof(envelope_t));
-    *use = (*use + ((int) sizeof(envelope_t))) % (MAX_MESSAGE_COUNT_PER_SENDER * comm_size);
+    memcpy(&envelope, memory_start + (*use) * sizeof(envelope_t), sizeof(envelope_t));
+    *use = (*use + 1) % (MAX_MESSAGE_COUNT_PER_SENDER);
+
+    memcpy(out, envelope.message.data, count * size);
 
     ///// CRITICAL SECTION /////
 
@@ -256,11 +244,11 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
     envelope.message = message;
     envelope.sender = comm_rank;
 
-    int offset = ((int) sizeof(int)) * dest + (MAX_MESSAGE_COUNT_PER_SENDER * dest);
-    int *fill = ((int *) (inbox.shm_p + offset));
-    void *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
-    memcpy(memory_start + *fill, &envelope, sizeof(envelope_t));
-    *fill = *fill + ((int) sizeof(envelope_t)) % (MAX_MESSAGE_COUNT_PER_SENDER * comm_size);
+    size_t offset = (2 * sizeof(int) * comm_rank) + (MAX_MESSAGE_COUNT_PER_SENDER * sizeof(envelope_t) * comm_rank);
+    int *fill = (int *) (inbox.shm_p + offset);
+    byte *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
+    memcpy(memory_start + (*fill) * sizeof(envelope_t), &envelope, sizeof(envelope_t));
+    *fill = ((*fill) + 1) % (MAX_MESSAGE_COUNT_PER_SENDER);
 
     ///// CRITICAL SECTION /////
 
@@ -314,28 +302,6 @@ MPI_create_or_open_semaphore(char *name, sem_t **out_sem, int initial)
     //    {
     //        *out_sem = sem;
     //    }
-    //}
-}
-
-void
-MPI_debug_sprint_memory(char *out)
-{
-    //char header[100];
-    //sprintf(header, "MEMORY as seen by %d: \n", comm_rank);
-    //strcat(out, header);
-    //for (int i = 0; i < comm_size; i++)
-    //{
-    //    char buffer[10000];
-    //    sprintf(buffer, "inbox%d: (msg_count: %d use: %d) # ", i, *inboxes[i].msg_count, *inboxes[i].msg_count * sizeof(en));
-    //    strcat(out, buffer);
-    //    buffer[0] = '\0';
-    //    for (int j = 0; j < MAX_MESSAGE_COUNT; j += 4)
-    //    {
-    //        sprintf(buffer, "|%7d", *(int *) (inboxes[i].shm_p + j));
-    //        strcat(out, buffer);
-    //        buffer[0] = '\0';
-    //    }
-    //    strcat(out, "|\n");
     //}
 }
 

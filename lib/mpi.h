@@ -11,9 +11,11 @@
 #define SEM_GO_NAME_FORMAT "p%d_go"
 #define SEM_TERMINATE_NAME_FORMAT "p%d_terminate"
 #define SHM_INBOX_NAME_FORMAT "shm_inbox%d"
-#define SHM_INBOX_STATUS_NAME_FORMAT "shm_inbox%d_status"
 
 #define MAX_MESSAGE_LENGTH 128
+#define MAX_MESSAGE_COUNT_PER_SENDER 8
+#define MAX_PROCESS_COUNT 100
+
 
 typedef unsigned char byte;
 
