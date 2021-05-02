@@ -16,7 +16,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define BOUNDED_BUFFER_SIZE 100
+#define BOUNDED_BUFFER_SIZE 1000
 #define MAX_PROCESS_COUNT 100
 
 #define DEBUG 0
@@ -59,7 +59,7 @@ MPI_Init(int *argc, char ***argv)
         sprintf(inbox_name, SHM_INBOX_NAME_FORMAT, i);
         int shm_inbox_fd;
         void *shm_inbox_pointer;
-        MPI_create_shared_memory(inbox_name, (BOUNDED_BUFFER_SIZE) * sizeof(message_t), &shm_inbox_pointer, &shm_inbox_fd);
+        MPI_create_shared_memory(inbox_name, (BOUNDED_BUFFER_SIZE) , &shm_inbox_pointer, &shm_inbox_fd);
 
         char status_name[100];
         sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, i);
@@ -145,18 +145,6 @@ int
 MPI_Finalize()
 {
     MPI_debug_print("INFO", "Finalize %d\n", comm_rank);
-    inbox_t inbox = inboxes[comm_rank];
-
-    char name[100];
-    sprintf(name, SHM_INBOX_NAME_FORMAT, comm_rank);
-    shm_unlink(name);
-
-    char status_name[100];
-    sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, comm_rank);
-    shm_unlink(status_name);
-
-    sem_close(inbox.sem_full);
-    sem_close(inbox.sem_empty);
 
     if (comm_rank == 0)
     {
@@ -172,6 +160,38 @@ MPI_Finalize()
             sem_close(processes[i].init);
             sem_close(processes[i].go);
             sem_close(processes[i].terminate);
+            sem_destroy(processes[i].init);
+            sem_destroy(processes[i].go);
+            sem_destroy(processes[i].terminate);
+
+            inbox_t inbox = inboxes[i];
+
+            char name[100];
+            sprintf(name, SHM_INBOX_NAME_FORMAT, i);
+            shm_unlink(name);
+
+            char status_name[100];
+            sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, i);
+            shm_unlink(status_name);
+
+            sem_close(inbox.sem_full);
+            sem_close(inbox.sem_empty);
+            sem_destroy(inbox.sem_full);
+            sem_destroy(inbox.sem_empty);
+
+            char sem_name[100];
+            sprintf(sem_name, SEM_INITIALIZED_NAME_FORMAT, i);
+            sem_unlink(sem_name);
+            sprintf(sem_name, SEM_GO_NAME_FORMAT, i);
+            sem_unlink(sem_name);
+            sprintf(sem_name, SEM_TERMINATE_NAME_FORMAT, i);
+            sem_unlink(sem_name);
+            sprintf(sem_name, SEM_FULL_NAME_FORMAT, i);
+            sem_unlink(sem_name);
+            sprintf(sem_name, SEM_EMPTY_NAME_FORMAT, i);
+            sem_unlink(sem_name);
+            sprintf(sem_name, SEM_MUTEX_NAME_FORMAT, i);
+            sem_unlink(sem_name);
         }
     }
     else
