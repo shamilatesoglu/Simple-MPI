@@ -13,16 +13,36 @@
 #define SHM_INBOX_NAME_FORMAT "shm_inbox%d"
 #define SHM_INBOX_STATUS_NAME_FORMAT "shm_inbox%d_status"
 
-typedef struct
+#define MAX_MESSAGE_LENGTH 128
+
+typedef unsigned char byte;
+
+struct message
+{
+    byte data[MAX_MESSAGE_LENGTH];
+    size_t size;
+};
+
+typedef struct message message_t;
+
+struct envelope
+{
+    message_t message;
+    int sender;
+};
+
+typedef struct envelope envelope_t;
+
+struct inbox
 {
     sem_t *lock;
     sem_t *sem_empty;
     sem_t *sem_full;
-    void *shm_p;
-    int shm_fd;
-    int *use;
-    int *fill;
-} inbox_t;
+    int *msg_count;
+    byte *shm_p;
+};
+
+typedef struct inbox inbox_t;
 
 typedef struct
 {
