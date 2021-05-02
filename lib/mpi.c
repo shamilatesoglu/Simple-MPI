@@ -17,7 +17,7 @@
 #include <errno.h>
 
 #define MAX_MESSAGE_COUNT_PER_PROCESS 1
-#define MAX_MESSAGE_SIZE 256
+#define MAX_MESSAGE_SIZE 1024
 #define MAX_PROCESS_COUNT 100
 
 #define DEBUG 0
@@ -262,7 +262,7 @@ MPI_create_shared_memory(char *name, int size, void **out_shm_pointer, int *out_
         MPI_debug_print("ERROR", "Unable to open a shared memory segment \"%s\".\n", name);
         exit(0);
     }
-    ftruncate(shm_fd, MAX_MESSAGE_COUNT_PER_PROCESS);
+    ftruncate(shm_fd, size);
 
     void *shm_pointer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (MAP_FAILED == shm_pointer)
@@ -278,23 +278,24 @@ MPI_create_shared_memory(char *name, int size, void **out_shm_pointer, int *out_
 void
 MPI_create_or_open_semaphore(char *name, sem_t **out_sem, int initial)
 {
-    sem_t *sem = sem_open(name, O_EXCL | O_CREAT, 0644, 0);
-    if (errno == EEXIST)
-    {
-        *out_sem = sem_open(name, O_CREAT, 0644, 0);
-    }
-    else
-    {
-        int status = sem_init(sem, 1, initial);
-        if (status != 0)
-        {
-            MPI_debug_print("ERROR", "Error while initializing semaphore %s: %s\n", name, strerror(errno));
-        }
-        else
-        {
-            *out_sem = sem;
-        }
-    }
+    sem_t *sem = sem_open(name,  O_CREAT, 0644, initial);
+    *out_sem = sem;
+    // if (errno == EEXIST)
+    // {
+    //     *out_sem = sem_open(name, O_CREAT, 0644, 0);
+    // }
+    // else
+    // {
+    //     int status = sem_init(sem, 1, initial);
+    //     if (status != 0)
+    //     {
+    //         MPI_debug_print("ERROR", "Error while initializing semaphore %s: %s\n", name, strerror(errno));
+    //     }
+    //     else
+    //     {
+    //         *out_sem = sem;
+    //     }
+    // }
 }
 
 void
