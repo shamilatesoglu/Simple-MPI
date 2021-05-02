@@ -11,18 +11,39 @@
 #define SEM_GO_NAME_FORMAT "p%d_go"
 #define SEM_TERMINATE_NAME_FORMAT "p%d_terminate"
 #define SHM_INBOX_NAME_FORMAT "shm_inbox%d"
-#define SHM_INBOX_STATUS_NAME_FORMAT "shm_inbox%d_status"
 
-typedef struct
+#define MAX_MESSAGE_LENGTH 128
+#define MAX_MESSAGE_COUNT_PER_SENDER 8
+#define MAX_PROCESS_COUNT 100
+
+
+typedef unsigned char byte;
+
+struct message
+{
+    byte data[MAX_MESSAGE_LENGTH];
+    size_t size;
+};
+
+typedef struct message message_t;
+
+struct envelope
+{
+    message_t message;
+    int sender;
+};
+
+typedef struct envelope envelope_t;
+
+struct inbox
 {
     sem_t *lock;
     sem_t *sem_empty;
     sem_t *sem_full;
-    void *shm_p;
-    int shm_fd;
-    int *use;
-    int *fill;
-} inbox_t;
+    byte *shm_p;
+};
+
+typedef struct inbox inbox_t;
 
 typedef struct
 {

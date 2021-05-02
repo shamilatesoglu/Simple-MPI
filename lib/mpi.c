@@ -16,11 +16,7 @@
 #include <string.h>
 #include <errno.h>
 
-#define BOUNDED_BUFFER_SIZE 1000
-#define MAX_PROCESS_COUNT 100
-
 #define DEBUG 0
-#define PRINT_MEMORY 0
 
 static int comm_size;
 static int comm_rank;
@@ -34,10 +30,7 @@ void
 MPI_debug_print(char *tag, char *fmt, ...);
 
 void
-MPI_debug_sprint_memory(char *out);
-
-void
-MPI_create_shared_memory(char *name, int size, void **out_shm_pointer, int *out_fd);
+MPI_create_shared_memory(char *name, size_t size, byte **out_shm_pointer, int *out_fd);
 
 void
 MPI_create_or_open_semaphore(char *name, sem_t **out_sem, int initial);
@@ -57,30 +50,23 @@ MPI_Init(int *argc, char ***argv)
     {
         char inbox_name[100];
         sprintf(inbox_name, SHM_INBOX_NAME_FORMAT, i);
-        int shm_inbox_fd;
-        void *shm_inbox_pointer;
-        MPI_create_shared_memory(inbox_name, (BOUNDED_BUFFER_SIZE) , &shm_inbox_pointer, &shm_inbox_fd);
+        int inbox_shm_fd;
+        byte *inbox_shm_pointer;
+        size_t inbox_memory_size = ((2 * sizeof(int) * comm_size) + (MAX_MESSAGE_COUNT_PER_SENDER * comm_size)) * sizeof(envelope_t);
+        MPI_create_shared_memory(inbox_name, inbox_memory_size, &inbox_shm_pointer, &inbox_shm_fd);
 
-        char status_name[100];
-        sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, i);
-        int shm_inbox_status_fd;
-        void *shm_inbox_status_pointer;
-        MPI_create_shared_memory(status_name, 2 * sizeof(int), &shm_inbox_status_pointer, &shm_inbox_status_fd);
-
-        char init_name[100];
-        sprintf(init_name, SEM_INITIALIZED_NAME_FORMAT, i);
+        char sem_name[100];
+        sprintf(sem_name, SEM_INITIALIZED_NAME_FORMAT, i);
         sem_t *init;
-        MPI_create_or_open_semaphore(init_name, &init, 0);
+        MPI_create_or_open_semaphore(sem_name, &init, 0);
 
-        char go_name[100];
-        sprintf(go_name, SEM_GO_NAME_FORMAT, i);
+        sprintf(sem_name, SEM_GO_NAME_FORMAT, i);
         sem_t *go;
-        MPI_create_or_open_semaphore(go_name, &go, 0);
+        MPI_create_or_open_semaphore(sem_name, &go, 0);
 
-        char terminate_name[100];
-        sprintf(terminate_name, SEM_TERMINATE_NAME_FORMAT, i);
+        sprintf(sem_name, SEM_TERMINATE_NAME_FORMAT, i);
         sem_t *terminate;
-        MPI_create_or_open_semaphore(terminate_name, &terminate, 0);
+        MPI_create_or_open_semaphore(sem_name, &terminate, 0);
 
         process_status_t process_status;
         process_status.init = init;
@@ -88,31 +74,23 @@ MPI_Init(int *argc, char ***argv)
         process_status.terminate = terminate;
         processes[i] = process_status;
 
-        char mutex_name[100];
-        sprintf(mutex_name, SEM_MUTEX_NAME_FORMAT, i);
+        sprintf(sem_name, SEM_MUTEX_NAME_FORMAT, i);
         sem_t *mutex;
-        MPI_create_or_open_semaphore(mutex_name, &mutex, 1);
+        MPI_create_or_open_semaphore(sem_name, &mutex, 1);
 
-        char full_name[100];
-        sprintf(full_name, SEM_FULL_NAME_FORMAT, i);
+        sprintf(sem_name, SEM_FULL_NAME_FORMAT, i);
         sem_t *full;
-        MPI_create_or_open_semaphore(full_name, &full, 0);
+        MPI_create_or_open_semaphore(sem_name, &full, 0);
 
-        char empty_name[100];
-        sprintf(empty_name, SEM_EMPTY_NAME_FORMAT, i);
+        sprintf(sem_name, SEM_EMPTY_NAME_FORMAT, i);
         sem_t *empty;
-        MPI_create_or_open_semaphore(empty_name, &empty, BOUNDED_BUFFER_SIZE);
+        MPI_create_or_open_semaphore(sem_name, &empty, MAX_MESSAGE_COUNT_PER_SENDER);
 
         inbox_t inbox;
         inbox.lock = mutex;
         inbox.sem_full = full;
         inbox.sem_empty = empty;
-        inbox.shm_fd = shm_inbox_fd;
-        inbox.shm_p = shm_inbox_pointer;
-        inbox.fill = (int *) (shm_inbox_status_pointer);
-        inbox.use = (int *) (shm_inbox_status_pointer + sizeof(int));
-        *(inbox.fill) = 0;
-        *(inbox.use) = 0;
+        inbox.shm_p = inbox_shm_pointer;
         inboxes[i] = inbox;
     }
 
@@ -166,13 +144,9 @@ MPI_Finalize()
 
             inbox_t inbox = inboxes[i];
 
-            char name[100];
-            sprintf(name, SHM_INBOX_NAME_FORMAT, i);
-            shm_unlink(name);
-
-            char status_name[100];
-            sprintf(status_name, SHM_INBOX_STATUS_NAME_FORMAT, i);
-            shm_unlink(status_name);
+            char shm_name[100];
+            sprintf(shm_name, SHM_INBOX_NAME_FORMAT, i);
+            shm_unlink(shm_name);
 
             sem_close(inbox.sem_full);
             sem_close(inbox.sem_empty);
@@ -223,34 +197,30 @@ MPI_Recv(void *out, int count, int size, int source, int tag)
     inbox_t inbox = inboxes[comm_rank];
 
     MPI_debug_print("INFO", "%d is waiting for its inbox to be filled\n", comm_rank);
-    int fval, eval;
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
 
     sem_wait(inbox.sem_full);
     sem_wait(inbox.lock);
-#if PRINT_MEMORY
-    char m[10000];
-    m[0] = '\0';
-    MPI_debug_sprint_memory(m);
-    printf("%s", m);
-#endif
-    memcpy(out, inbox.shm_p + *(inbox.use), count * size);
-    *(inbox.use) = (*(inbox.use) + count * size) % BOUNDED_BUFFER_SIZE;
 
-    MPI_debug_print("INFO", "%d has read the message sent by %d\n", comm_rank, source);
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
+    ///// CRITICAL SECTION /////
+
+    size_t offset = (2 * sizeof(int) * source) + (MAX_MESSAGE_COUNT_PER_SENDER * sizeof(envelope_t) * source);
+    int *use = ((int *) (inbox.shm_p + offset + sizeof(int)));
+
+    byte *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
+    envelope_t envelope;
+
+    memcpy(&envelope, memory_start + (*use) * sizeof(envelope_t), sizeof(envelope_t));
+    *use = (*use + 1) % (MAX_MESSAGE_COUNT_PER_SENDER);
+
+    memcpy(out, envelope.message.data, count * size);
+
+    ///// CRITICAL SECTION /////
 
     sem_post(inbox.lock);
     sem_post(inbox.sem_empty);
 
-    MPI_debug_print("INFO", "%d has notified %d that the inbox%d has been emptied\n", comm_rank, source, comm_rank);
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", comm_rank, fval, eval);
+    MPI_debug_print("INFO", "%d has notified everyone that its inbox has been emptied\n", comm_rank);
+
     return 0;
 }
 
@@ -260,48 +230,52 @@ MPI_Send(const void *data, int count, int size, int dest, int tag)
     inbox_t inbox = inboxes[dest];
 
     MPI_debug_print("INFO", "%d is waiting for inbox%d to be emptied\n", comm_rank, dest);
-    int fval, eval;
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
 
     sem_wait(inbox.sem_empty);
     sem_wait(inbox.lock);
-    memcpy(inbox.shm_p + *(inbox.fill), data, count * size);
-    *(inbox.fill) = (*(inbox.fill) + count * size) % BOUNDED_BUFFER_SIZE;
 
-    MPI_debug_print("INFO", "%d has written a message to inbox%d\n", comm_rank, dest);
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
+    ///// CRITICAL SECTION /////
+
+    message_t message;
+    message.size = count * size;
+    memcpy(message.data, data, message.size);
+
+    envelope_t envelope;
+    envelope.message = message;
+    envelope.sender = comm_rank;
+
+    size_t offset = (2 * sizeof(int) * comm_rank) + (MAX_MESSAGE_COUNT_PER_SENDER * sizeof(envelope_t) * comm_rank);
+    int *fill = (int *) (inbox.shm_p + offset);
+    byte *memory_start = inbox.shm_p + offset + 2 * sizeof(int);
+    memcpy(memory_start + (*fill) * sizeof(envelope_t), &envelope, sizeof(envelope_t));
+    *fill = ((*fill) + 1) % (MAX_MESSAGE_COUNT_PER_SENDER);
+
+    ///// CRITICAL SECTION /////
 
     sem_post(inbox.lock);
     sem_post(inbox.sem_full);
 
     MPI_debug_print("INFO", "%d has notified %d that the inbox%d has been filled\n", comm_rank, dest, dest);
-    sem_getvalue(inbox.sem_full, &fval);
-    sem_getvalue(inbox.sem_empty, &eval);
-    MPI_debug_print("INFO", "inbox%d full: %d empty: %d\n", dest, fval, eval);
 
     return 0;
 }
 
 void
-MPI_create_shared_memory(char *name, int size, void **out_shm_pointer, int *out_fd)
+MPI_create_shared_memory(char *name, size_t size, byte **out_shm_pointer, int *out_fd)
 {
     int shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
     if (shm_fd < 0)
     {
         MPI_debug_print("ERROR", "Unable to open a shared memory segment \"%s\".\n", name);
-        exit(0);
+        exit(errno);
     }
-    ftruncate(shm_fd, BOUNDED_BUFFER_SIZE);
+    ftruncate(shm_fd, (long) size);
 
-    void *shm_pointer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    byte *shm_pointer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (MAP_FAILED == shm_pointer)
     {
         MPI_debug_print("ERROR", "Unable to map shared memory address space for \"%s\".\n", name);
-        exit(0);
+        exit(errno);
     }
 
     *out_fd = shm_fd;
@@ -311,45 +285,24 @@ MPI_create_shared_memory(char *name, int size, void **out_shm_pointer, int *out_
 void
 MPI_create_or_open_semaphore(char *name, sem_t **out_sem, int initial)
 {
-    sem_t *sem = sem_open(name, O_EXCL | O_CREAT, 0644, 0);
-    if (errno == EEXIST)
-    {
-        *out_sem = sem_open(name, O_CREAT, 0644, 0);
-    }
-    else
-    {
-        int status = sem_init(sem, 1, initial);
-        if (status != 0)
-        {
-            MPI_debug_print("ERROR", "Error while initializing semaphore %s: %s\n", name, strerror(errno));
-        }
-        else
-        {
-            *out_sem = sem;
-        }
-    }
-}
-
-void
-MPI_debug_sprint_memory(char *out)
-{
-    char header[100];
-    sprintf(header, "MEMORY as seen by %d: \n", comm_rank);
-    strcat(out, header);
-    for (int i = 0; i < comm_size; i++)
-    {
-        char buffer[10000];
-        sprintf(buffer, "inbox%d: (fill: %d use: %d) # ", i, *inboxes[i].fill, *inboxes[i].use);
-        strcat(out, buffer);
-        buffer[0] = '\0';
-        for (int j = 0; j < BOUNDED_BUFFER_SIZE; j += 4)
-        {
-            sprintf(buffer, "|%7d", *(int *) (inboxes[i].shm_p + j));
-            strcat(out, buffer);
-            buffer[0] = '\0';
-        }
-        strcat(out, "|\n");
-    }
+    sem_t *sem = sem_open(name, O_CREAT, 0644, initial);
+    *out_sem = sem;
+    //if (errno == EEXIST)
+    //{
+    //    *out_sem = sem_open(name, O_CREAT, 0644, 0);
+    //}
+    //else
+    //{
+    //    int status = sem_init(sem, 1, initial);
+    //    if (status != 0)
+    //    {
+    //        MPI_debug_print("ERROR", "Error while initializing semaphore %s: %s\n", name, strerror(errno));
+    //    }
+    //    else
+    //    {
+    //        *out_sem = sem;
+    //    }
+    //}
 }
 
 void
