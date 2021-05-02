@@ -38,7 +38,6 @@ struct inbox
     sem_t *lock;
     sem_t *sem_empty;
     sem_t *sem_full;
-    int *msg_count;
     byte *shm_p;
 };
 
