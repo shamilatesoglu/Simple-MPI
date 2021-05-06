@@ -287,22 +287,6 @@ MPI_create_or_open_semaphore(char *name, sem_t **out_sem, int initial)
 {
     sem_t *sem = sem_open(name, O_CREAT, 0644, initial);
     *out_sem = sem;
-    //if (errno == EEXIST)
-    //{
-    //    *out_sem = sem_open(name, O_CREAT, 0644, 0);
-    //}
-    //else
-    //{
-    //    int status = sem_init(sem, 1, initial);
-    //    if (status != 0)
-    //    {
-    //        MPI_debug_print("ERROR", "Error while initializing semaphore %s: %s\n", name, strerror(errno));
-    //    }
-    //    else
-    //    {
-    //        *out_sem = sem;
-    //    }
-    //}
 }
 
 void
